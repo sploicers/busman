@@ -43,6 +43,7 @@ struct InternalState {
 
 impl Host {
 	pub fn new() -> Result<Self> {
+		load_kernel_module(KernelModule::UsbIpCore)?;
 		load_kernel_module(KernelModule::UsbIpHost)?;
 		Ok(Self {
 			sysfs: SysfsHandle::new(),
@@ -214,17 +215,12 @@ impl DeviceExport {
 		let fd_count = 1; // Needed since first arg to underlying poll syscall is a C pointer
 		let timeout = -1; // No timeout
 
-		loop {
-			match unsafe { libc::poll(&mut poll_fd, fd_count, timeout) } {
-				-1 => {
-					if let Some(errno) = io::Error::last_os_error().raw_os_error() {
-						// EINTR = system call interrupted, which is retryable. Other values of errno aren't.
-						if errno != libc::EINTR {
-							break;
-						}
-					}
+		while let -1 = unsafe { libc::poll(&mut poll_fd, fd_count, timeout) } {
+			if let Some(errno) = io::Error::last_os_error().raw_os_error() {
+				// EINTR = system call interrupted, which is retryable. Other values of errno aren't.
+				if errno != libc::EINTR {
+					break;
 				}
-				_ => break, // If we get here, we got one of the signals that we're polling for
 			}
 		}
 		self.host.release_device(&state.device)

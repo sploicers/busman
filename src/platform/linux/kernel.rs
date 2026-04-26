@@ -4,7 +4,8 @@ use crate::{platform::PlatformError, result::Result};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum KernelModule {
-	VhciHcd,   // "vhci-hdc (client)"
+	VhciHcd, // "vhci-hdc (client)"
+	UsbIpCore,
 	UsbIpHost, // "usbip-host (server)"
 }
 
@@ -29,6 +30,7 @@ impl KernelModule {
 	pub fn as_str(&self) -> &'static str {
 		match self {
 			KernelModule::VhciHcd => "vhci-hcd",
+			KernelModule::UsbIpCore => "usbip-core",
 			KernelModule::UsbIpHost => "usbip-host",
 		}
 	}
