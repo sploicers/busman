@@ -10,6 +10,12 @@ pub struct Vhci {
 	root: PathBuf,
 }
 
+impl Default for Vhci {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl Vhci {
 	pub fn new() -> Self {
 		Self {

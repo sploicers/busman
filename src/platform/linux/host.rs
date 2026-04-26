@@ -43,7 +43,7 @@ pub struct InterfaceDir {
 ///
 /// On acquision, it will:
 /// * Write bus ID of selected device to `sys/bus/usb/drivers/usbip-host/match_busid`, which marks it as
-/// managed by this driver, for when the kernel (usbip-host module) asks.
+///   managed by this driver, for when the kernel (usbip-host module) asks.
 /// * Bind device, via write to `/sys/bus/usb/drivers/usbip-host/bind`
 ///
 /// On client disconnect (or `drop()`), it will do the inverse:
