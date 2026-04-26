@@ -3,8 +3,17 @@ name = "busman"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+opt-level = "s"
+strip = true
+lto = true
+panic = "abort"
+
 [dependencies]
 bytes = "1"
 byteorder = "1"
 regex = "1"
 num-traits = "0.2.19"
+libc = "0.2"
+log = "0.4.29"
+env_logger = "0.11.10"

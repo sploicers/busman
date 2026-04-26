@@ -1,4 +1,5 @@
 use crate::{
+	platform::socket::configure_socket_for_handoff,
 	protocol::{Decode, Encode, Frame},
 	result::{DecodeResult, EncodeResult, Result},
 };
@@ -20,31 +21,37 @@ impl Server {
 
 	pub fn accept(&self) -> Result<Connection> {
 		let (socket, addr) = self.listener.accept()?;
-		println!("Accepted connection from {addr}.");
-		Ok(Connection::server(socket))
+		log::debug!("Accepted connection from {addr}.");
+		Connection::server(socket)
 	}
 }
 
 impl Connection {
 	pub fn client(addr: SocketAddrV4) -> Result<Self> {
-		println!("Initiating connection to {addr}...");
+		log::debug!("Initiating connection to {addr}...");
 		let socket = TcpStream::connect(addr)?;
-		println!("Connection established.");
+		configure_socket_for_handoff(&socket)?;
+		log::debug!("Connection established.");
 		Ok(Self { socket })
 	}
 
-	pub fn server(socket: TcpStream) -> Self {
-		Self { socket }
+	pub fn server(socket: TcpStream) -> Result<Self> {
+		configure_socket_for_handoff(&socket)?;
+		Ok(Self { socket })
 	}
 
 	pub fn send(&mut self, frame: &Frame) -> EncodeResult<()> {
-		println!("SEND: {frame}");
+		log::debug!("SEND: {frame}");
 		frame.encode(&mut self.socket)
 	}
 
 	pub fn recv(&mut self) -> DecodeResult<Frame> {
 		let frame = Frame::decode(&mut self.socket)?;
-		println!("RECV: {frame}");
+		log::debug!("RECV: {frame}");
 		Ok(frame)
+	}
+
+	pub fn into_socket(self) -> TcpStream {
+		self.socket
 	}
 }

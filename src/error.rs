@@ -1,17 +1,24 @@
-use std::{error::Error, fmt::Display};
+use std::{
+	error::Error,
+	fmt::{Display, Pointer},
+};
+
+use crate::platform::PlatformError;
 
 #[derive(Debug)]
 pub enum BusmanError {
 	Decode(DecodeError),
 	Encode(EncodeError),
 	Parse(ParseError),
+	Platform(PlatformError),
+	Io(std::io::Error),
 }
 
 impl Error for BusmanError {}
 
 impl From<std::io::Error> for BusmanError {
 	fn from(value: std::io::Error) -> Self {
-		Self::Decode(DecodeError::Io(value))
+		Self::Io(value)
 	}
 }
 
@@ -39,12 +46,20 @@ impl From<ParseError> for BusmanError {
 	}
 }
 
+impl From<PlatformError> for BusmanError {
+	fn from(value: PlatformError) -> Self {
+		Self::Platform(value)
+	}
+}
+
 impl Display for BusmanError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			BusmanError::Decode(e) => e.fmt(f),
 			BusmanError::Encode(e) => e.fmt(f),
 			BusmanError::Parse(e) => e.fmt(f),
+			BusmanError::Platform(e) => e.fmt(f),
+			BusmanError::Io(e) => e.fmt(f),
 		}
 	}
 }
@@ -69,7 +84,7 @@ impl Display for EncodeError {
 			EncodeError::StringExceedsFieldWidth(s, size) => {
 				write!(f, "string of length {} exceeds field width {size}", s.len())
 			}
-			EncodeError::Io(_) => todo!(),
+			EncodeError::Io(_) => todo!("{self:?}"),
 		}
 	}
 }
@@ -99,8 +114,7 @@ impl Display for DecodeError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::UnsupportedOpcode(e) => write!(f, "unsupported opcode: {:#06x}", e),
-			Self::Io(_) => todo!(),
-			Self::InvalidUtf8(_) => todo!(),
+			_ => todo!("{self:?}"),
 		}
 	}
 }
@@ -128,14 +142,7 @@ impl From<std::num::ParseIntError> for ParseError {
 }
 
 impl Display for ParseError {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			ParseError::NotADirectory => todo!(),
-			ParseError::NotAnInterface => todo!(),
-			ParseError::NotADevice => todo!(),
-			ParseError::NonUtf8Path => todo!(),
-			ParseError::Io(_) => todo!(),
-			ParseError::InvalidHex(_) => todo!(),
-		}
+	fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		todo!("{self:?}")
 	}
 }

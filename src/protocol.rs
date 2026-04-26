@@ -31,7 +31,7 @@ enum Opcode {
 	RepImport = 0x0003,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct USBDevice {
 	pub path: String,
 	pub bus_id: String,
@@ -55,7 +55,7 @@ impl USBDevice {
 	}
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct USBDeviceInterface {
 	pub class: u8,
 	pub subclass: u8,
@@ -67,6 +67,16 @@ pub enum USBDeviceInterfaceField {
 	Class,
 	Subclass,
 	Protocol,
+}
+
+impl USBDeviceInterfaceField {
+	pub fn as_str(&self) -> &str {
+		match self {
+			USBDeviceInterfaceField::Class => "bInterfaceClass",
+			USBDeviceInterfaceField::Subclass => "bInterfaceClass",
+			USBDeviceInterfaceField::Protocol => "bInterfaceProtocol",
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -82,6 +92,24 @@ pub enum USBDeviceField {
 	Protocol,
 	ConfigurationValue,
 	NumConfigurations,
+}
+
+impl USBDeviceField {
+	pub fn as_str(&self) -> &str {
+		match self {
+			USBDeviceField::BusNum => "busnum",
+			USBDeviceField::DevNum => "devnum",
+			USBDeviceField::Speed => "speed",
+			USBDeviceField::VendorId => "idVendor",
+			USBDeviceField::ProductId => "idProduct",
+			USBDeviceField::RevisionNum => "bcdDevice",
+			USBDeviceField::Class => "bDeviceClass",
+			USBDeviceField::Subclass => "bDeviceSubClass",
+			USBDeviceField::Protocol => "bDeviceProtocol",
+			USBDeviceField::ConfigurationValue => "bConfigurationValue",
+			USBDeviceField::NumConfigurations => "bNumConfigurations",
+		}
+	}
 }
 
 // Empty - in the protocol spec there're "version" and "status" fields,
@@ -117,7 +145,7 @@ impl TryFrom<u16> for Opcode {
 			val if val == Self::ReqImport as u16 => Ok(Self::ReqImport),
 			val if val == Self::RepImport as u16 => Ok(Self::RepImport),
 
-			// We don't implement the rest of the spec - probably only establishing TCP conn in userland
+			// We don't implement the rest of the spec - only establishing TCP conn in userland
 			// after selecting and importing a device, and then handing fd of the socket off to the kernel
 			// afterwards for the rest
 			val => Err(DecodeError::UnsupportedOpcode(val)),
@@ -139,18 +167,17 @@ impl Display for Frame {
 impl Encode for Frame {
 	fn encode(&self, writer: &mut impl Write) -> EncodeResult<()> {
 		match self {
-			Frame::RequestDeviceList(data) => data.encode(writer)?,
-			Frame::ReplyDeviceList(data) => data.encode(writer)?,
-			Frame::RequestDeviceImport(data) => data.encode(writer)?,
-			Frame::ReplyDeviceImport(data) => data.encode(writer)?,
+			Frame::RequestDeviceList(data) => data.encode(writer),
+			Frame::ReplyDeviceList(data) => data.encode(writer),
+			Frame::RequestDeviceImport(data) => data.encode(writer),
+			Frame::ReplyDeviceImport(data) => data.encode(writer),
 		}
-		Ok(())
 	}
 }
 
 impl Decode for Frame {
 	fn decode(reader: &mut impl Read) -> DecodeResult<Self> {
-		_ = reader.read_u16::<BigEndian>()?; // Skip past USBIP protocol version, don't care about it
+		reader.read_u16::<BigEndian>()?; // Skip past USBIP protocol version, don't care about it
 		let opcode = Opcode::try_from(reader.read_u16::<BigEndian>()?)?;
 
 		Ok(match opcode {
@@ -222,7 +249,7 @@ impl Encode for PayloadRequestDeviceImport {
 
 impl Decode for PayloadRequestDeviceImport {
 	fn decode(reader: &mut impl Read) -> DecodeResult<Self> {
-		_ = reader.read_u32::<BigEndian>()?; // status
+		reader.read_u32::<BigEndian>()?; // status
 		let bus_id = string_from_fixed_length_buffer::<32>(reader)?;
 		Ok(Self { bus_id })
 	}
@@ -338,7 +365,7 @@ impl Decode for USBDeviceInterface {
 		let class = reader.read_u8()?;
 		let subclass = reader.read_u8()?;
 		let protocol = reader.read_u8()?;
-		_ = reader.read_u8()?; // padding
+		reader.read_u8()?; // padding
 
 		Ok(Self {
 			class,
