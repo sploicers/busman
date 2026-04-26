@@ -1,20 +1,43 @@
 use std::{
+	fs::DirEntry,
 	io,
 	net::TcpStream,
+	num::ParseIntError,
 	os::fd::{AsFd, AsRawFd, IntoRawFd, OwnedFd},
 	path::PathBuf,
 	sync::Arc,
 };
 
+use num_traits::Num;
+
 use crate::{
 	connection::Connection,
 	platform::linux::{
 		kernel::{KernelModule, load_kernel_module},
-		sysfs::{DeviceDir, InterfaceDir, SysfsHandle},
+		sysfs::{
+			read_sysfs_val_dec, read_sysfs_val_hex, read_sysfs_val_string, write_sysfs_val_string,
+		},
 	},
 	protocol::{USBDevice, USBDeviceField, USBDeviceInterface, USBDeviceInterfaceField},
 	result::Result,
 };
+
+const SYSFS_ROOT_HOST: &str = "/sys/bus/usb";
+
+pub struct Host {
+	root: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct DeviceDir {
+	root: PathBuf,
+	bus_id: String,
+}
+
+#[derive(Debug)]
+pub struct InterfaceDir {
+	path: PathBuf,
+}
 
 /// RAII wrapper representing an active export of a USB device by the USBIP host (machine running the server binary).
 ///
@@ -32,10 +55,6 @@ pub struct DeviceExport {
 	state: Option<InternalState>,
 }
 
-pub struct Host {
-	sysfs: SysfsHandle,
-}
-
 struct InternalState {
 	device: USBDevice,
 	watchdog_fd: OwnedFd,
@@ -45,8 +64,9 @@ impl Host {
 	pub fn new() -> Result<Self> {
 		load_kernel_module(KernelModule::UsbIpCore)?;
 		load_kernel_module(KernelModule::UsbIpHost)?;
+
 		Ok(Self {
-			sysfs: SysfsHandle::new(),
+			root: SYSFS_ROOT_HOST.into(),
 		})
 	}
 
@@ -54,7 +74,6 @@ impl Host {
 	/// each listing.
 	pub fn list_devices(&self) -> Result<Vec<USBDevice>> {
 		Ok(self
-			.sysfs
 			.device_dirs()?
 			.flat_map(|dir| {
 				build_device(&dir).inspect_err(|e| {
@@ -65,7 +84,7 @@ impl Host {
 	}
 
 	pub fn list_device_interfaces(&self, bus_id: &str) -> Result<Vec<USBDeviceInterface>> {
-		Ok(if let Some(device) = self.sysfs.device_for_bus(bus_id)? {
+		Ok(if let Some(device) = self.device_for_bus(bus_id)? {
 			device
 				.interface_dirs()?
 				.flat_map(|dir| build_interface(&dir))
@@ -78,7 +97,6 @@ impl Host {
 	/// Build a `USBDevice` record via reading from sysfs directory tree, given bus ID of device
 	pub fn device_by_id(&self, bus_id: &str) -> Result<Option<USBDevice>> {
 		Ok(self
-			.sysfs
 			.device_for_bus(bus_id)?
 			.and_then(|dir| build_device(&dir).ok()))
 	}
@@ -116,20 +134,20 @@ impl Host {
 	}
 
 	fn bind_device(&self, device: &USBDevice, driver: KernelModule) -> Result<()> {
-		std::fs::write(self.driver_bind_path(driver), &device.bus_id)
+		write_sysfs_val_string(&self.driver_bind_path(driver), &device.bus_id)
 			.inspect_err(|e| log::error!("Failed to bind device: {e:?}"))?;
 		Ok(())
 	}
 
 	fn unbind_device<T: AsRef<str>>(&self, device: &USBDevice, driver: T) -> Result<()> {
-		std::fs::write(self.driver_unbind_path(driver), &device.bus_id)
+		write_sysfs_val_string(&self.driver_unbind_path(driver), &device.bus_id)
 			.inspect_err(|e| log::error!("Failed to unbind device on disconnect: {e:?}"))?;
 		Ok(())
 	}
 
 	fn register_device(&self, device: &USBDevice, driver: KernelModule) -> Result<()> {
-		std::fs::write(
-			self.driver_allowlist_path(driver),
+		write_sysfs_val_string(
+			&self.driver_allowlist_path(driver),
 			format!("add {}", &device.bus_id),
 		)
 		.inspect_err(|e| log::error!("Failed to add device to allowlist on export: {e:?}"))?;
@@ -137,8 +155,8 @@ impl Host {
 	}
 
 	fn unregister_device(&self, device: &USBDevice, driver: KernelModule) -> Result<()> {
-		std::fs::write(
-			self.driver_allowlist_path(driver),
+		write_sysfs_val_string(
+			&self.driver_allowlist_path(driver),
 			format!("del {}", &device.bus_id),
 		)
 		.inspect_err(|e| log::error!("Failed to delete device from allowlist: {e:?}"))?;
@@ -146,8 +164,8 @@ impl Host {
 	}
 
 	fn handoff_device(&self, device: &USBDevice, socket: TcpStream) -> Result<()> {
-		std::fs::write(
-			self.sock_assign_path(&device.bus_id),
+		write_sysfs_val_string(
+			&self.sock_assign_path(&device.bus_id),
 			socket.into_raw_fd().to_string(),
 		)
 		.inspect_err(|e| log::error!("Failed to hand off device to kernel driver: {e:?}"))?;
@@ -155,15 +173,21 @@ impl Host {
 	}
 
 	fn unbind_device_interfaces(&self, device: &USBDevice) -> Result<()> {
-		if let Some(dir) = self.sysfs.device_for_bus(&device.bus_id)? {
+		if let Some(dir) = self.device_for_bus(&device.bus_id)? {
 			for dir in dir.interface_dirs()? {
 				if let Ok(path) = dir.driver_dir()
 					&& let Some(filename) = path.file_name()
 				{
-					std::fs::write(
-						self.driver_unbind_path(filename.to_string_lossy()),
+					write_sysfs_val_string(
+						&self.driver_unbind_path(filename.to_string_lossy()),
 						&device.bus_id,
-					)?;
+					)
+					.inspect_err(|e| {
+						log::error!(
+							"Failed to unbind interface {filename:?} for device {}: {e:?}",
+							device.bus_id,
+						)
+					})?;
 				}
 			}
 		}
@@ -171,7 +195,7 @@ impl Host {
 	}
 
 	fn trigger_sysfs_reprobe(&self, device: &USBDevice) -> Result<()> {
-		std::fs::write(self.driver_reprobe_path(), &device.bus_id).inspect_err(|e| {
+		write_sysfs_val_string(&self.driver_reprobe_path(), &device.bus_id).inspect_err(|e| {
 			log::error!(
 				"Failed to trigger driver reprobe for device {}: {}",
 				device.bus_id,
@@ -181,25 +205,137 @@ impl Host {
 		Ok(())
 	}
 
-	pub fn driver_bind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
-		self.sysfs.driver_dir(module).join("bind")
+	fn device_dirs(&self) -> Result<impl Iterator<Item = DeviceDir>> {
+		Ok(self
+			.devices_dir()
+			.read_dir()?
+			.flatten()
+			.filter_map(DeviceDir::from_dir_entry))
 	}
 
-	pub fn driver_unbind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
-		self.sysfs.driver_dir(module).join("unbind")
+	fn device_for_bus(&self, bus_id: &str) -> Result<Option<DeviceDir>> {
+		let path = self.devices_dir().join(bus_id);
+
+		Ok(if path.try_exists()? {
+			DeviceDir::from_path(path)
+		} else {
+			None
+		})
 	}
 
-	pub fn driver_allowlist_path<T: AsRef<str>>(&self, driver: T) -> PathBuf {
-		self.sysfs.driver_dir(driver).join("match_busid")
+	pub fn devices_dir(&self) -> PathBuf {
+		self.root.join("devices")
 	}
 
-	pub fn sock_assign_path(&self, bus_id: &str) -> PathBuf {
-		self.sysfs.devices_dir().join(bus_id).join("usbip_sockfd")
+	pub fn driver_dir<T: AsRef<str>>(&self, driver: T) -> PathBuf {
+		self.root.join("drivers").join(driver.as_ref())
 	}
 
-	pub fn driver_reprobe_path(&self) -> PathBuf {
-		self.sysfs.base_path().join("drivers_probe")
+	fn driver_bind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
+		self.driver_dir(module).join("bind")
 	}
+
+	fn driver_unbind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
+		self.driver_dir(module).join("unbind")
+	}
+
+	fn driver_allowlist_path<T: AsRef<str>>(&self, driver: T) -> PathBuf {
+		self.driver_dir(driver).join("match_busid")
+	}
+
+	fn sock_assign_path(&self, bus_id: &str) -> PathBuf {
+		self.devices_dir().join(bus_id).join("usbip_sockfd")
+	}
+
+	fn driver_reprobe_path(&self) -> PathBuf {
+		self.root.join("drivers_probe")
+	}
+}
+
+impl DeviceDir {
+	pub fn from_path(path: PathBuf) -> Option<Self> {
+		let dirname = path.file_name()?.to_str()?.to_owned();
+
+		is_sysfs_device_dir(&dirname).then_some(Self {
+			root: path,
+			bus_id: dirname,
+		})
+	}
+
+	pub fn from_dir_entry(dir: DirEntry) -> Option<Self> {
+		Self::from_path(dir.path())
+	}
+
+	pub fn bus_id(&self) -> &str {
+		&self.bus_id
+	}
+
+	pub fn interface_dirs(&self) -> Result<impl Iterator<Item = InterfaceDir>> {
+		Ok(self
+			.root
+			.read_dir()?
+			.flatten()
+			.filter_map(InterfaceDir::new))
+	}
+
+	pub fn read_attr(&self, field: USBDeviceField) -> Result<String> {
+		Ok(read_sysfs_val_string(&self.root.join(field.as_str()))?)
+	}
+
+	pub fn read_attr_hex<T>(&self, field: USBDeviceField) -> Result<T>
+	where
+		T: Num<FromStrRadixErr = ParseIntError>,
+	{
+		Ok(read_sysfs_val_hex(&self.root.join(field.as_str()))?)
+	}
+
+	pub fn read_attr_dec<T>(&self, field: USBDeviceField) -> Result<T>
+	where
+		T: Num<FromStrRadixErr = ParseIntError>,
+	{
+		Ok(read_sysfs_val_dec(&self.root.join(field.as_str()))?)
+	}
+}
+
+impl InterfaceDir {
+	pub fn new(dir: DirEntry) -> Option<Self> {
+		let path = dir.path();
+		let dirname = path.file_name()?.to_str()?;
+		is_sysfs_interface_dir(dirname).then_some(InterfaceDir { path })
+	}
+
+	pub fn driver_dir(&self) -> Result<PathBuf> {
+		Ok(self.path.join("driver").read_link()?)
+	}
+
+	pub fn read_attr(&self, field: USBDeviceInterfaceField) -> Result<String> {
+		Ok(read_sysfs_val_string(&self.path.join(field.as_str()))?)
+	}
+
+	pub fn read_attr_hex<T>(&self, field: USBDeviceInterfaceField) -> Result<T>
+	where
+		T: Num<FromStrRadixErr = ParseIntError>,
+	{
+		Ok(read_sysfs_val_hex(&self.path.join(field.as_str()))?)
+	}
+
+	pub fn read_attr_dec<T>(&self, field: USBDeviceInterfaceField) -> Result<T>
+	where
+		T: Num<FromStrRadixErr = ParseIntError>,
+	{
+		Ok(read_sysfs_val_dec(&self.path.join(field.as_str()))?)
+	}
+}
+
+fn is_sysfs_device_dir(name: &str) -> bool {
+	// device dirs have naming patterns like "1-1", "2-1.4" - skip interfaces (":")
+	// and root hubs ("usb[x]")
+	!name.contains(':') && !name.starts_with("usb")
+}
+
+fn is_sysfs_interface_dir(name: &str) -> bool {
+	// interface dirs have naming patterns like "1-1:1.0"
+	name.contains(':')
 }
 
 impl DeviceExport {
