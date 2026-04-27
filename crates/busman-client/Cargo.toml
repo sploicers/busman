@@ -1,0 +1,9 @@
+[package]
+name = "busman-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+busman-core = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

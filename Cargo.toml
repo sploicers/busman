@@ -1,5 +1,8 @@
-[package]
-name = "busman"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
@@ -9,7 +12,8 @@ strip = true
 lto = true
 panic = "abort"
 
-[dependencies]
+[workspace.dependencies]
+busman-core = { path = "crates/busman-core" }
 bytes = "1"
 byteorder = "1"
 regex = "1"

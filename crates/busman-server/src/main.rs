@@ -4,12 +4,10 @@ use std::{
 	thread::{self},
 };
 
-use busman::{
+use busman_core::{
 	connection::{Connection, Server},
 	platform::host::Host,
-	protocol::{
-		Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport,
-	},
+	protocol::{Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport},
 	result::Result,
 };
 
@@ -51,11 +49,7 @@ fn handle_device_list_request(conn: &mut Connection, host: &Arc<Host>) -> Result
 	Ok(())
 }
 
-fn handle_device_import_request(
-	mut conn: Connection,
-	host: &Arc<Host>,
-	bus_id: String,
-) -> Result<()> {
+fn handle_device_import_request(mut conn: Connection, host: &Arc<Host>, bus_id: String) -> Result<()> {
 	let device = host.device_by_id(&bus_id)?;
 	let exists = device.is_some();
 

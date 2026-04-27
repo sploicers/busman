@@ -16,10 +16,10 @@ pub trait Decode: Sized {
 
 #[derive(Debug)]
 pub enum Frame {
-	RequestDeviceList(PayloadRequestDeviceList), // OP_REQ_DEVLIST
-	ReplyDeviceList(PayloadReplyDeviceList),     // OP_REP_DEVLIST
+	RequestDeviceList(PayloadRequestDeviceList),     // OP_REQ_DEVLIST
+	ReplyDeviceList(PayloadReplyDeviceList),         // OP_REP_DEVLIST
 	RequestDeviceImport(PayloadRequestDeviceImport), // OP_REQ_IMPORT
-	ReplyDeviceImport(PayloadReplyDeviceImport), // OP_REP_IMPORT
+	ReplyDeviceImport(PayloadReplyDeviceImport),     // OP_REP_IMPORT
 }
 
 #[repr(u16)]
@@ -181,13 +181,9 @@ impl Decode for Frame {
 		let opcode = Opcode::try_from(reader.read_u16::<BigEndian>()?)?;
 
 		Ok(match opcode {
-			Opcode::ReqDevlist => {
-				Self::RequestDeviceList(PayloadRequestDeviceList::decode(reader)?)
-			}
+			Opcode::ReqDevlist => Self::RequestDeviceList(PayloadRequestDeviceList::decode(reader)?),
 			Opcode::RepDevlist => Self::ReplyDeviceList(PayloadReplyDeviceList::decode(reader)?),
-			Opcode::ReqImport => {
-				Self::RequestDeviceImport(PayloadRequestDeviceImport::decode(reader)?)
-			}
+			Opcode::ReqImport => Self::RequestDeviceImport(PayloadRequestDeviceImport::decode(reader)?),
 			Opcode::RepImport => Self::ReplyDeviceImport(PayloadReplyDeviceImport::decode(reader)?),
 		})
 	}

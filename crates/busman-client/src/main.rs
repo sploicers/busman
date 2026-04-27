@@ -1,10 +1,9 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use busman::{
+use busman_core::{
 	connection::Connection,
 	protocol::{
-		Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport,
-		PayloadRequestDeviceList,
+		Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport, PayloadRequestDeviceList,
 	},
 	result::Result,
 };

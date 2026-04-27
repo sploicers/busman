@@ -10,9 +10,7 @@ pub enum KernelModule {
 }
 
 pub fn load_kernel_module(module: KernelModule) -> Result<()> {
-	let exit_status = Command::new("/sbin/modprobe")
-		.arg(module.to_string())
-		.status()?;
+	let exit_status = Command::new("/sbin/modprobe").arg(module.to_string()).status()?;
 
 	if !exit_status.success() {
 		Err(PlatformError::CommandFailed(exit_status))?;

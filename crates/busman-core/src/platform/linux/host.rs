@@ -14,9 +14,7 @@ use crate::{
 	connection::Connection,
 	platform::linux::{
 		kernel::{KernelModule, load_kernel_module},
-		sysfs::{
-			read_sysfs_val_dec, read_sysfs_val_hex, read_sysfs_val_string, write_sysfs_val_string,
-		},
+		sysfs::{read_sysfs_val_dec, read_sysfs_val_hex, read_sysfs_val_string, write_sysfs_val_string},
 	},
 	protocol::{USBDevice, USBDeviceField, USBDeviceInterface, USBDeviceInterfaceField},
 	result::Result,
@@ -85,10 +83,7 @@ impl Host {
 
 	pub fn list_device_interfaces(&self, bus_id: &str) -> Result<Vec<USBDeviceInterface>> {
 		Ok(if let Some(device) = self.device_for_bus(bus_id)? {
-			device
-				.interface_dirs()?
-				.flat_map(|dir| build_interface(&dir))
-				.collect()
+			device.interface_dirs()?.flat_map(|dir| build_interface(&dir)).collect()
 		} else {
 			vec![]
 		})
@@ -96,16 +91,10 @@ impl Host {
 
 	/// Build a `USBDevice` record via reading from sysfs directory tree, given bus ID of device
 	pub fn device_by_id(&self, bus_id: &str) -> Result<Option<USBDevice>> {
-		Ok(self
-			.device_for_bus(bus_id)?
-			.and_then(|dir| build_device(&dir).ok()))
+		Ok(self.device_for_bus(bus_id)?.and_then(|dir| build_device(&dir).ok()))
 	}
 
-	pub fn export_device(
-		self: &Arc<Self>,
-		conn: Connection,
-		device: USBDevice,
-	) -> Result<DeviceExport> {
+	pub fn export_device(self: &Arc<Self>, conn: Connection, device: USBDevice) -> Result<DeviceExport> {
 		self.unbind_device_interfaces(&device)?;
 		self.register_device(&device, KernelModule::UsbIpHost)?;
 		self.bind_device(&device, KernelModule::UsbIpHost)?;
@@ -120,10 +109,7 @@ impl Host {
 
 		Ok(DeviceExport {
 			host: Arc::clone(self),
-			state: Some(InternalState {
-				device,
-				watchdog_fd,
-			}),
+			state: Some(InternalState { device, watchdog_fd }),
 		})
 	}
 
@@ -146,29 +132,20 @@ impl Host {
 	}
 
 	fn register_device(&self, device: &USBDevice, driver: KernelModule) -> Result<()> {
-		write_sysfs_val_string(
-			&self.driver_allowlist_path(driver),
-			format!("add {}", &device.bus_id),
-		)
-		.inspect_err(|e| log::error!("Failed to add device to allowlist on export: {e:?}"))?;
+		write_sysfs_val_string(&self.driver_allowlist_path(driver), format!("add {}", &device.bus_id))
+			.inspect_err(|e| log::error!("Failed to add device to allowlist on export: {e:?}"))?;
 		Ok(())
 	}
 
 	fn unregister_device(&self, device: &USBDevice, driver: KernelModule) -> Result<()> {
-		write_sysfs_val_string(
-			&self.driver_allowlist_path(driver),
-			format!("del {}", &device.bus_id),
-		)
-		.inspect_err(|e| log::error!("Failed to delete device from allowlist: {e:?}"))?;
+		write_sysfs_val_string(&self.driver_allowlist_path(driver), format!("del {}", &device.bus_id))
+			.inspect_err(|e| log::error!("Failed to delete device from allowlist: {e:?}"))?;
 		Ok(())
 	}
 
 	fn handoff_device(&self, device: &USBDevice, socket: TcpStream) -> Result<()> {
-		write_sysfs_val_string(
-			&self.sock_assign_path(&device.bus_id),
-			socket.into_raw_fd().to_string(),
-		)
-		.inspect_err(|e| log::error!("Failed to hand off device to kernel driver: {e:?}"))?;
+		write_sysfs_val_string(&self.sock_assign_path(&device.bus_id), socket.into_raw_fd().to_string())
+			.inspect_err(|e| log::error!("Failed to hand off device to kernel driver: {e:?}"))?;
 		Ok(())
 	}
 
@@ -178,16 +155,13 @@ impl Host {
 				if let Ok(path) = dir.driver_dir()
 					&& let Some(filename) = path.file_name()
 				{
-					write_sysfs_val_string(
-						&self.driver_unbind_path(filename.to_string_lossy()),
-						&device.bus_id,
-					)
-					.inspect_err(|e| {
-						log::error!(
-							"Failed to unbind interface {filename:?} for device {}: {e:?}",
-							device.bus_id,
-						)
-					})?;
+					write_sysfs_val_string(&self.driver_unbind_path(filename.to_string_lossy()), &device.bus_id)
+						.inspect_err(|e| {
+							log::error!(
+								"Failed to unbind interface {filename:?} for device {}: {e:?}",
+								device.bus_id,
+							)
+						})?;
 				}
 			}
 		}
@@ -196,11 +170,7 @@ impl Host {
 
 	fn trigger_sysfs_reprobe(&self, device: &USBDevice) -> Result<()> {
 		write_sysfs_val_string(&self.driver_reprobe_path(), &device.bus_id).inspect_err(|e| {
-			log::error!(
-				"Failed to trigger driver reprobe for device {}: {}",
-				device.bus_id,
-				e
-			);
+			log::error!("Failed to trigger driver reprobe for device {}: {}", device.bus_id, e);
 		})?;
 		Ok(())
 	}
@@ -271,11 +241,7 @@ impl DeviceDir {
 	}
 
 	pub fn interface_dirs(&self) -> Result<impl Iterator<Item = InterfaceDir>> {
-		Ok(self
-			.root
-			.read_dir()?
-			.flatten()
-			.filter_map(InterfaceDir::new))
+		Ok(self.root.read_dir()?.flatten().filter_map(InterfaceDir::new))
 	}
 
 	pub fn read_attr(&self, field: USBDeviceField) -> Result<String> {
@@ -392,10 +358,7 @@ fn build_device(dir: &DeviceDir) -> Result<USBDevice> {
 		protocol: dir.read_attr_hex(USBDeviceField::Protocol)?,
 		configuration_value: dir.read_attr_dec(USBDeviceField::ConfigurationValue)?,
 		num_configurations: dir.read_attr_dec(USBDeviceField::NumConfigurations)?,
-		interfaces: dir
-			.interface_dirs()?
-			.flat_map(|dir| build_interface(&dir))
-			.collect(),
+		interfaces: dir.interface_dirs()?.flat_map(|dir| build_interface(&dir)).collect(),
 	})
 }
 

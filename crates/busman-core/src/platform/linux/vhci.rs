@@ -26,13 +26,7 @@ impl Vhci {
 	pub fn import_device(&self, device: &USBDevice, fd: i32) -> Result<()> {
 		std::fs::write(
 			self.attach_dir(),
-			format!(
-				"{} {} {} {}",
-				fd,
-				device.bus_id,
-				device.device_id(),
-				device.speed
-			),
+			format!("{} {} {} {}", fd, device.bus_id, device.device_id(), device.speed),
 		)?;
 		Ok(())
 	}

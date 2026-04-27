@@ -46,21 +46,11 @@ fn socket_set_keepalive_interval(socket: &TcpStream) -> Result<()> {
 }
 
 fn socket_set_max_keepalive_probes(socket: &TcpStream) -> Result<()> {
-	set_socket_option(
-		socket,
-		libc::SOL_TCP,
-		libc::TCP_KEEPCNT,
-		TCP_MAX_FAILED_PROBES,
-	)
+	set_socket_option(socket, libc::SOL_TCP, libc::TCP_KEEPCNT, TCP_MAX_FAILED_PROBES)
 }
 
 fn socket_set_timeout(socket: &TcpStream) -> Result<()> {
-	set_socket_option(
-		socket,
-		libc::SOL_TCP,
-		libc::TCP_USER_TIMEOUT,
-		TCP_TIMEOUT_MS,
-	)
+	set_socket_option(socket, libc::SOL_TCP, libc::TCP_USER_TIMEOUT, TCP_TIMEOUT_MS)
 }
 
 fn set_socket_option(socket: &TcpStream, level: c_int, name: c_int, value: c_int) -> Result<()> {

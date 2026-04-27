@@ -8,10 +8,7 @@ pub fn read_sysfs_val_string(path: &Path) -> std::result::Result<String, ParseEr
 	Ok(s.trim().to_owned())
 }
 
-pub fn write_sysfs_val_string<T: Into<String>>(
-	path: &Path,
-	val: T,
-) -> std::result::Result<(), ParseError> {
+pub fn write_sysfs_val_string<T: Into<String>>(path: &Path, val: T) -> std::result::Result<(), ParseError> {
 	Ok(std::fs::write(path, val.into())?)
 }
 
