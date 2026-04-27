@@ -21,7 +21,7 @@ fn main() -> Result<()> {
 		Frame::ReplyDeviceList(PayloadReplyDeviceList { devices, .. }) => devices,
 		other => {
 			log::error!("unexpected frame during USBIP handshake: {other:?}");
-			todo!("unexpected frame during USBIP handshake: {other:?}")
+			vec![]
 		}
 	};
 

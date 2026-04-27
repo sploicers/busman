@@ -82,7 +82,7 @@ impl Host {
 	}
 
 	pub fn list_device_interfaces(&self, bus_id: &str) -> Result<Vec<USBDeviceInterface>> {
-		Ok(if let Some(device) = self.device_for_bus(bus_id)? {
+		Ok(if let Some(device) = self.device_dir_for_bus(bus_id)? {
 			device.interface_dirs()?.flat_map(|dir| build_interface(&dir)).collect()
 		} else {
 			vec![]
@@ -91,7 +91,7 @@ impl Host {
 
 	/// Build a `USBDevice` record via reading from sysfs directory tree, given bus ID of device
 	pub fn device_by_id(&self, bus_id: &str) -> Result<Option<USBDevice>> {
-		Ok(self.device_for_bus(bus_id)?.and_then(|dir| build_device(&dir).ok()))
+		Ok(self.device_dir_for_bus(bus_id)?.and_then(|dir| build_device(&dir).ok()))
 	}
 
 	pub fn export_device(self: &Arc<Self>, conn: Connection, device: USBDevice) -> Result<DeviceExport> {
@@ -150,7 +150,7 @@ impl Host {
 	}
 
 	fn unbind_device_interfaces(&self, device: &USBDevice) -> Result<()> {
-		if let Some(dir) = self.device_for_bus(&device.bus_id)? {
+		if let Some(dir) = self.device_dir_for_bus(&device.bus_id)? {
 			for dir in dir.interface_dirs()? {
 				if let Ok(path) = dir.driver_dir()
 					&& let Some(filename) = path.file_name()
@@ -177,38 +177,38 @@ impl Host {
 
 	fn device_dirs(&self) -> Result<impl Iterator<Item = DeviceDir>> {
 		Ok(self
-			.devices_dir()
+			.devices_path()
 			.read_dir()?
 			.flatten()
 			.filter_map(DeviceDir::from_dir_entry))
 	}
 
-	fn device_for_bus(&self, bus_id: &str) -> Result<Option<DeviceDir>> {
-		Ok(DeviceDir::from_path(self.devices_dir().join(bus_id)))
+	fn device_dir_for_bus(&self, bus_id: &str) -> Result<Option<DeviceDir>> {
+		Ok(DeviceDir::from_path(self.devices_path().join(bus_id)))
 	}
 
-	fn devices_dir(&self) -> PathBuf {
+	fn devices_path(&self) -> PathBuf {
 		self.root.join("devices")
 	}
 
-	pub fn driver_dir<T: AsRef<str>>(&self, driver: T) -> PathBuf {
+	pub fn driver_path<T: AsRef<str>>(&self, driver: T) -> PathBuf {
 		self.root.join("drivers").join(driver.as_ref())
 	}
 
 	fn driver_bind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
-		self.driver_dir(module).join("bind")
+		self.driver_path(module).join("bind")
 	}
 
 	fn driver_unbind_path<T: AsRef<str>>(&self, module: T) -> PathBuf {
-		self.driver_dir(module).join("unbind")
+		self.driver_path(module).join("unbind")
 	}
 
 	fn driver_allowlist_path<T: AsRef<str>>(&self, driver: T) -> PathBuf {
-		self.driver_dir(driver).join("match_busid")
+		self.driver_path(driver).join("match_busid")
 	}
 
 	fn sock_assign_path(&self, bus_id: &str) -> PathBuf {
-		self.devices_dir().join(bus_id).join("usbip_sockfd")
+		self.devices_path().join(bus_id).join("usbip_sockfd")
 	}
 
 	fn driver_reprobe_path(&self) -> PathBuf {
