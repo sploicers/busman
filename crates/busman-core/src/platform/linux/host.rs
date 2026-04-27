@@ -28,7 +28,7 @@ pub struct Host {
 
 #[derive(Debug)]
 pub struct DeviceDir {
-	root: PathBuf,
+	path: PathBuf,
 	bus_id: String,
 }
 
@@ -193,7 +193,7 @@ impl Host {
 		})
 	}
 
-	pub fn devices_dir(&self) -> PathBuf {
+	fn devices_dir(&self) -> PathBuf {
 		self.root.join("devices")
 	}
 
@@ -226,10 +226,7 @@ impl DeviceDir {
 	pub fn from_path(path: PathBuf) -> Option<Self> {
 		let dirname = path.file_name()?.to_str()?.to_owned();
 
-		is_sysfs_device_dir(&dirname).then_some(Self {
-			root: path,
-			bus_id: dirname,
-		})
+		is_sysfs_device_dir(&dirname).then_some(Self { path, bus_id: dirname })
 	}
 
 	pub fn from_dir_entry(dir: DirEntry) -> Option<Self> {
@@ -241,25 +238,25 @@ impl DeviceDir {
 	}
 
 	pub fn interface_dirs(&self) -> Result<impl Iterator<Item = InterfaceDir>> {
-		Ok(self.root.read_dir()?.flatten().filter_map(InterfaceDir::new))
+		Ok(self.path.read_dir()?.flatten().filter_map(InterfaceDir::new))
 	}
 
 	pub fn read_attr(&self, field: USBDeviceField) -> Result<String> {
-		Ok(read_sysfs_val_string(&self.root.join(field.as_str()))?)
+		Ok(read_sysfs_val_string(&self.path.join(field.as_str()))?)
 	}
 
 	pub fn read_attr_hex<T>(&self, field: USBDeviceField) -> Result<T>
 	where
 		T: Num<FromStrRadixErr = ParseIntError>,
 	{
-		Ok(read_sysfs_val_hex(&self.root.join(field.as_str()))?)
+		Ok(read_sysfs_val_hex(&self.path.join(field.as_str()))?)
 	}
 
 	pub fn read_attr_dec<T>(&self, field: USBDeviceField) -> Result<T>
 	where
 		T: Num<FromStrRadixErr = ParseIntError>,
 	{
-		Ok(read_sysfs_val_dec(&self.root.join(field.as_str()))?)
+		Ok(read_sysfs_val_dec(&self.path.join(field.as_str()))?)
 	}
 }
 
@@ -270,7 +267,7 @@ impl InterfaceDir {
 		is_sysfs_interface_dir(dirname).then_some(InterfaceDir { path })
 	}
 
-	pub fn driver_dir(&self) -> Result<PathBuf> {
+	fn driver_dir(&self) -> Result<PathBuf> {
 		Ok(self.path.join("driver").read_link()?)
 	}
 
@@ -306,26 +303,28 @@ fn is_sysfs_interface_dir(name: &str) -> bool {
 
 impl DeviceExport {
 	pub fn run_to_completion(mut self) -> Result<()> {
-		let state = self.state.take().expect("");
+		if let Some(state) = self.state.take() {
+			let mut poll_fd = libc::pollfd {
+				fd: state.watchdog_fd.as_raw_fd(),
+				events: libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR,
+				revents: 0,
+			};
 
-		let mut poll_fd = libc::pollfd {
-			fd: state.watchdog_fd.as_raw_fd(),
-			events: libc::POLLRDHUP | libc::POLLHUP | libc::POLLERR,
-			revents: 0,
-		};
+			let fd_count = 1; // Needed since first arg to underlying poll syscall is a C pointer
+			let timeout = -1; // No timeout
 
-		let fd_count = 1; // Needed since first arg to underlying poll syscall is a C pointer
-		let timeout = -1; // No timeout
-
-		while let -1 = unsafe { libc::poll(&mut poll_fd, fd_count, timeout) } {
-			if let Some(errno) = io::Error::last_os_error().raw_os_error() {
-				// EINTR = system call interrupted, which is retryable. Other values of errno aren't.
-				if errno != libc::EINTR {
-					break;
+			while let -1 = unsafe { libc::poll(&mut poll_fd, fd_count, timeout) } {
+				if let Some(errno) = io::Error::last_os_error().raw_os_error() {
+					// EINTR = system call interrupted, which is retryable. Other values of errno aren't.
+					if errno != libc::EINTR {
+						break;
+					}
 				}
 			}
+			self.host.release_device(&state.device)
+		} else {
+			Ok(())
 		}
-		self.host.release_device(&state.device)
 	}
 }
 

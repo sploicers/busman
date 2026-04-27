@@ -8,8 +8,8 @@ pub fn read_sysfs_val_string(path: &Path) -> std::result::Result<String, ParseEr
 	Ok(s.trim().to_owned())
 }
 
-pub fn write_sysfs_val_string<T: Into<String>>(path: &Path, val: T) -> std::result::Result<(), ParseError> {
-	Ok(std::fs::write(path, val.into())?)
+pub fn write_sysfs_val_string<T: AsRef<str>>(path: &Path, val: T) -> std::result::Result<(), ParseError> {
+	Ok(std::fs::write(path, val.as_ref())?)
 }
 
 pub fn read_sysfs_val_hex<T>(path: &Path) -> std::result::Result<T, ParseError>

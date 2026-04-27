@@ -41,7 +41,7 @@ fn main() -> Result<()> {
 	}
 }
 
-fn handle_device_list_request(conn: &mut Connection, host: &Arc<Host>) -> Result<()> {
+fn handle_device_list_request(conn: &mut Connection, host: &Host) -> Result<()> {
 	conn.send(&Frame::ReplyDeviceList(PayloadReplyDeviceList {
 		status: 0,
 		devices: host.list_devices()?,
