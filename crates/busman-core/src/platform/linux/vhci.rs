@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::protocol::USBDevice;
 use crate::result::Result;
 
-const SYSFS_ROOT_VHCI: &str = "/sys/devices/platform/vhci_hcd";
+const SYSFS_ROOT_VHCI: &str = "/sys/devices/platform/vhci_hcd.0";
 
 #[derive(Debug)]
 pub struct Vhci {
