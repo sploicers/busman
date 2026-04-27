@@ -184,13 +184,7 @@ impl Host {
 	}
 
 	fn device_for_bus(&self, bus_id: &str) -> Result<Option<DeviceDir>> {
-		let path = self.devices_dir().join(bus_id);
-
-		Ok(if path.try_exists()? {
-			DeviceDir::from_path(path)
-		} else {
-			None
-		})
+		Ok(DeviceDir::from_path(self.devices_dir().join(bus_id)))
 	}
 
 	fn devices_dir(&self) -> PathBuf {
@@ -224,9 +218,8 @@ impl Host {
 
 impl DeviceDir {
 	pub fn from_path(path: PathBuf) -> Option<Self> {
-		let dirname = path.file_name()?.to_str()?.to_owned();
-
-		is_sysfs_device_dir(&dirname).then_some(Self { path, bus_id: dirname })
+		let bus_id = path.file_name()?.to_str()?.to_owned();
+		is_device_name(&bus_id).then_some(Self { path, bus_id })
 	}
 
 	pub fn from_dir_entry(dir: DirEntry) -> Option<Self> {
@@ -238,7 +231,7 @@ impl DeviceDir {
 	}
 
 	pub fn interface_dirs(&self) -> Result<impl Iterator<Item = InterfaceDir>> {
-		Ok(self.path.read_dir()?.flatten().filter_map(InterfaceDir::new))
+		Ok(self.path.read_dir()?.flatten().filter_map(InterfaceDir::from_dir_entry))
 	}
 
 	pub fn read_attr(&self, field: USBDeviceField) -> Result<String> {
@@ -261,10 +254,13 @@ impl DeviceDir {
 }
 
 impl InterfaceDir {
-	pub fn new(dir: DirEntry) -> Option<Self> {
-		let path = dir.path();
-		let dirname = path.file_name()?.to_str()?;
-		is_sysfs_interface_dir(dirname).then_some(InterfaceDir { path })
+	pub fn from_path(path: PathBuf) -> Option<Self> {
+		let name = path.file_name()?.to_str()?;
+		is_interface_name(name).then_some(Self { path })
+	}
+
+	pub fn from_dir_entry(dir: DirEntry) -> Option<Self> {
+		Self::from_path(dir.path())
 	}
 
 	fn driver_dir(&self) -> Result<PathBuf> {
@@ -288,17 +284,6 @@ impl InterfaceDir {
 	{
 		Ok(read_sysfs_val_dec(&self.path.join(field.as_str()))?)
 	}
-}
-
-fn is_sysfs_device_dir(name: &str) -> bool {
-	// device dirs have naming patterns like "1-1", "2-1.4" - skip interfaces (":")
-	// and root hubs ("usb[x]")
-	!name.contains(':') && !name.starts_with("usb")
-}
-
-fn is_sysfs_interface_dir(name: &str) -> bool {
-	// interface dirs have naming patterns like "1-1:1.0"
-	name.contains(':')
 }
 
 impl DeviceExport {
@@ -367,4 +352,12 @@ fn build_interface(dir: &InterfaceDir) -> Result<USBDeviceInterface> {
 		subclass: dir.read_attr_hex(USBDeviceInterfaceField::Subclass)?,
 		protocol: dir.read_attr_hex(USBDeviceInterfaceField::Protocol)?,
 	})
+}
+
+fn is_device_name(name: &str) -> bool {
+	!name.contains(':') && !name.starts_with("usb")
+}
+
+fn is_interface_name(name: &str) -> bool {
+	name.contains(':')
 }
