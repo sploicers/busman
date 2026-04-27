@@ -1,7 +1,4 @@
-use std::{
-	error::Error,
-	fmt::{Display, Pointer},
-};
+use std::{error::Error, fmt::Display};
 
 use crate::platform::PlatformError;
 
@@ -84,7 +81,7 @@ impl Display for EncodeError {
 			EncodeError::StringExceedsFieldWidth(s, size) => {
 				write!(f, "string of length {} exceeds field width {size}", s.len())
 			}
-			EncodeError::Io(_) => todo!("{self:?}"),
+			EncodeError::Io(_) => write!(f, "{self:?}"),
 		}
 	}
 }
@@ -114,7 +111,7 @@ impl Display for DecodeError {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
 			Self::UnsupportedOpcode(e) => write!(f, "unsupported opcode: {:#06x}", e),
-			_ => todo!("{self:?}"),
+			_ => write!(f, "{self:?}"),
 		}
 	}
 }
@@ -142,7 +139,7 @@ impl From<std::num::ParseIntError> for ParseError {
 }
 
 impl Display for ParseError {
-	fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		todo!("{self:?}")
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{self:?}")
 	}
 }
