@@ -11,13 +11,17 @@ use std::{
 use crate::{
 	connection::{Connection, Server},
 	platform::host::Host,
-	protocol::{Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport},
+	protocol::{
+		Frame, PayloadReplyDeviceImport, PayloadReplyDeviceList, PayloadRequestDeviceImport, PayloadRequestDeviceList,
+		USBDevice,
+	},
 	result::Result,
 };
 
 pub struct Engine<'a> {
 	sender: Sender<Event>,
 	events: Box<dyn Iterator<Item = Event> + 'a>,
+	client: Option<Connection>,
 	server: Option<ServerHandle>,
 	host: Arc<Host>,
 }
@@ -42,8 +46,14 @@ impl<'a> Engine<'a> {
 			sender: tx,
 			events: Box::new(rx.into_iter()),
 			host: Arc::new(Host::new()?),
+			client: None,
 			server: None,
 		})
+	}
+
+	pub fn client_connect(&mut self, addr: SocketAddrV4) -> Result<()> {
+		self.client = Some(Connection::client(addr)?);
+		Ok(())
 	}
 
 	pub fn start_server(&mut self, addr: SocketAddrV4) {
@@ -51,15 +61,16 @@ impl<'a> Engine<'a> {
 		let sender = self.sender.clone();
 
 		let handle: JoinHandle<Result<()>> = thread::spawn(move || {
+			let mut threads = vec![];
 			let server = Server::listen(addr)?;
 			_ = sender.send(Event::ServerStart(addr));
 
 			loop {
 				let mut conn = server.accept()?;
-				_ = sender.send(Event::ConnectionAccepted(addr));
 				let host = host.clone();
+				_ = sender.send(Event::ConnectionAccepted(addr));
 
-				let handler = thread::spawn(move || {
+				threads.push(thread::spawn(move || {
 					loop {
 						match conn.recv()? {
 							Frame::RequestDeviceList(_) => handle_device_list_request(&mut conn, &host)?,
@@ -69,7 +80,7 @@ impl<'a> Engine<'a> {
 							_ => {}
 						}
 					}
-				});
+				}));
 			}
 		});
 
@@ -79,6 +90,46 @@ impl<'a> Engine<'a> {
 	pub fn stop_server(&mut self) -> Result<()> {
 		if let Some(handle) = self.server.take() {
 			let _ = handle.0.join();
+		}
+		Ok(())
+	}
+
+	pub fn query_devices(&mut self) -> Result<Vec<USBDevice>> {
+		Ok(if let Some(conn) = &mut self.client {
+			conn.send(&Frame::RequestDeviceList(PayloadRequestDeviceList {}))?;
+
+			match conn.recv()? {
+				Frame::ReplyDeviceList(PayloadReplyDeviceList { devices, .. }) => devices,
+				other => {
+					log::error!("unexpected frame during USBIP handshake: {other:?}");
+					vec![]
+				}
+			}
+		} else {
+			vec![]
+		})
+	}
+
+	pub fn import_device(&mut self, bus_id: &str) -> Result<()> {
+		if let Some(client) = &mut self.client {
+			client.send(&Frame::RequestDeviceImport(PayloadRequestDeviceImport {
+				bus_id: bus_id.to_owned(),
+			}))?;
+
+			match client.recv()? {
+				Frame::ReplyDeviceImport(PayloadReplyDeviceImport {
+					status: 0,
+					device: Some(device),
+				}) => {
+					log::info!("Successfully imported device {device:?}")
+				}
+				Frame::ReplyDeviceImport(PayloadReplyDeviceImport { status: 1, .. }) => {
+					log::error!("Non-zero status code when attempting to import device {bus_id}")
+				}
+				other => {
+					log::error!("unexpected frame during USBIP handshake: {other:?}");
+				}
+			};
 		}
 		Ok(())
 	}
