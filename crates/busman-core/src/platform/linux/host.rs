@@ -14,7 +14,7 @@ use crate::{
 	connection::Connection,
 	platform::linux::{
 		kernel::{KernelModule, load_kernel_module},
-		sysfs::{read_sysfs_val_dec, read_sysfs_val_hex, read_sysfs_val_string, write_sysfs_val_string},
+		sysfs::{read_sysfs_val_dec, read_sysfs_val_hex, write_sysfs_val_string},
 	},
 	protocol::{USBDevice, USBDeviceField, USBDeviceInterface, USBDeviceInterfaceField},
 	result::Result,
@@ -79,14 +79,6 @@ impl Host {
 				})
 			})
 			.collect())
-	}
-
-	pub fn list_device_interfaces(&self, bus_id: &str) -> Result<Vec<USBDeviceInterface>> {
-		Ok(if let Some(device) = self.device_dir_for_bus(bus_id)? {
-			device.interface_dirs()?.flat_map(|dir| build_interface(&dir)).collect()
-		} else {
-			vec![]
-		})
 	}
 
 	/// Build a `USBDevice` record via reading from sysfs directory tree, given bus ID of device
@@ -234,10 +226,6 @@ impl DeviceDir {
 		Ok(self.path.read_dir()?.flatten().filter_map(InterfaceDir::from_dir_entry))
 	}
 
-	pub fn read_attr(&self, field: USBDeviceField) -> Result<String> {
-		Ok(read_sysfs_val_string(&self.path.join(field.as_str()))?)
-	}
-
 	pub fn read_attr_hex<T>(&self, field: USBDeviceField) -> Result<T>
 	where
 		T: Num<FromStrRadixErr = ParseIntError>,
@@ -267,22 +255,11 @@ impl InterfaceDir {
 		Ok(self.path.join("driver").read_link()?)
 	}
 
-	pub fn read_attr(&self, field: USBDeviceInterfaceField) -> Result<String> {
-		Ok(read_sysfs_val_string(&self.path.join(field.as_str()))?)
-	}
-
 	pub fn read_attr_hex<T>(&self, field: USBDeviceInterfaceField) -> Result<T>
 	where
 		T: Num<FromStrRadixErr = ParseIntError>,
 	{
 		Ok(read_sysfs_val_hex(&self.path.join(field.as_str()))?)
-	}
-
-	pub fn read_attr_dec<T>(&self, field: USBDeviceInterfaceField) -> Result<T>
-	where
-		T: Num<FromStrRadixErr = ParseIntError>,
-	{
-		Ok(read_sysfs_val_dec(&self.path.join(field.as_str()))?)
 	}
 }
 
