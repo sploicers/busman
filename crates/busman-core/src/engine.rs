@@ -34,6 +34,8 @@ pub enum Event {
 	DeviceExportStart,
 	DeviceExportStop,
 	NewDevice,
+	ImportSuccess(USBDevice),
+	ImportFailure(String),
 }
 
 struct ServerHandle(JoinHandle<Result<()>>);
@@ -112,16 +114,25 @@ impl<'a> Engine<'a> {
 
 	pub fn import_device(&mut self, bus_id: &str) -> Result<()> {
 		if let Some(client) = &mut self.client {
-			client.send(&Frame::RequestDeviceImport(PayloadRequestDeviceImport {
-				bus_id: bus_id.to_owned(),
-			}))?;
+			client
+				.send(&Frame::RequestDeviceImport(PayloadRequestDeviceImport {
+					bus_id: bus_id.to_owned(),
+				}))
+				.inspect_err(|err| {
+					let _ = self.sender.send(Event::ImportFailure(err.to_string()));
+				})?;
 
-			match client.recv()? {
+			let reply = client.recv().inspect_err(|err| {
+				let _ = self.sender.send(Event::ImportFailure(err.to_string()));
+			})?;
+
+			match reply {
 				Frame::ReplyDeviceImport(PayloadReplyDeviceImport {
 					status: 0,
 					device: Some(device),
 				}) => {
-					log::info!("Successfully imported device {device:?}")
+					log::info!("Successfully imported device {device:?}");
+					let _ = self.sender.send(Event::ImportSuccess(device));
 				}
 				Frame::ReplyDeviceImport(PayloadReplyDeviceImport { status: 1, .. }) => {
 					log::error!("Non-zero status code when attempting to import device {bus_id}")
@@ -156,6 +167,9 @@ impl Display for Event {
 		match self {
 			Event::ServerStart(addr) => write!(f, "Server listening at {addr}"),
 			Event::ConnectionAccepted(addr) => write!(f, "Accepted connection from {addr}"),
+			Event::ImportFailure(reason) => {
+				write!(f, "Non-zero status code when attempting to import device: {reason}")
+			}
 			other => write!(f, "{other:?}"),
 		}
 	}
