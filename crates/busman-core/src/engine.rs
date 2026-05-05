@@ -35,7 +35,7 @@ pub enum Event {
 	DeviceExportStop,
 	NewDevice,
 	ImportSuccess(USBDevice),
-	ImportFailure(String),
+	Error(String),
 }
 
 struct ServerHandle(JoinHandle<Result<()>>);
@@ -62,7 +62,7 @@ impl<'a> Engine<'a> {
 		let host = self.host.clone();
 		let sender = self.sender.clone();
 
-		let handle: JoinHandle<Result<()>> = thread::spawn(move || {
+		let handle = spawn_thread_and_forward_errors(sender.clone(), move || {
 			let mut threads = vec![];
 			let server = Server::listen(addr)?;
 			_ = sender.send(Event::ServerStart(addr));
@@ -72,7 +72,7 @@ impl<'a> Engine<'a> {
 				let host = host.clone();
 				_ = sender.send(Event::ConnectionAccepted(addr));
 
-				threads.push(thread::spawn(move || {
+				threads.push(spawn_thread_and_forward_errors(sender.clone(), move || {
 					loop {
 						match conn.recv()? {
 							Frame::RequestDeviceList(_) => handle_device_list_request(&mut conn, &host)?,
@@ -82,7 +82,7 @@ impl<'a> Engine<'a> {
 							_ => {}
 						}
 					}
-				}));
+				}))
 			}
 		});
 
@@ -114,17 +114,11 @@ impl<'a> Engine<'a> {
 
 	pub fn import_device(&mut self, bus_id: &str) -> Result<()> {
 		if let Some(client) = &mut self.client {
-			client
-				.send(&Frame::RequestDeviceImport(PayloadRequestDeviceImport {
-					bus_id: bus_id.to_owned(),
-				}))
-				.inspect_err(|err| {
-					let _ = self.sender.send(Event::ImportFailure(err.to_string()));
-				})?;
+			client.send(&Frame::RequestDeviceImport(PayloadRequestDeviceImport {
+				bus_id: bus_id.to_owned(),
+			}))?;
 
-			let reply = client.recv().inspect_err(|err| {
-				let _ = self.sender.send(Event::ImportFailure(err.to_string()));
-			})?;
+			let reply = client.recv()?;
 
 			match reply {
 				Frame::ReplyDeviceImport(PayloadReplyDeviceImport {
@@ -154,25 +148,37 @@ impl<'a> Iterator for Engine<'a> {
 	}
 }
 
+impl Display for Event {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Event::ServerStart(addr) => write!(f, "Server listening at {addr}"),
+			Event::ConnectionAccepted(addr) => write!(f, "Accepted connection from {addr}"),
+			Event::Error(reason) => write!(f, "Server error: {reason}"),
+			other => write!(f, "{other:?}"),
+		}
+	}
+}
+
+fn spawn_thread_and_forward_errors<F, T>(sender: Sender<Event>, f: F) -> JoinHandle<Result<T>>
+where
+	F: FnOnce() -> Result<T> + Send + 'static,
+	T: Send + 'static,
+{
+	thread::spawn(move || {
+		let result = f();
+		if let Err(e) = &result {
+			_ = sender.send(Event::Error(e.to_string()));
+		}
+		result
+	})
+}
+
 fn handle_device_list_request(conn: &mut Connection, host: &Host) -> Result<()> {
 	conn.send(&Frame::ReplyDeviceList(PayloadReplyDeviceList {
 		status: 0,
 		devices: host.list_devices()?,
 	}))?;
 	Ok(())
-}
-
-impl Display for Event {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			Event::ServerStart(addr) => write!(f, "Server listening at {addr}"),
-			Event::ConnectionAccepted(addr) => write!(f, "Accepted connection from {addr}"),
-			Event::ImportFailure(reason) => {
-				write!(f, "Non-zero status code when attempting to import device: {reason}")
-			}
-			other => write!(f, "{other:?}"),
-		}
-	}
 }
 
 fn handle_device_import_request(mut conn: Connection, host: &Arc<Host>, bus_id: String) -> Result<()> {
