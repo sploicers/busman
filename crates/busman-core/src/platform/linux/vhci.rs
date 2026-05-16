@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::error::{BusmanError, ParseError};
+use crate::platform::PlatformError;
 use crate::protocol::{DeviceSpeed, USBDevice};
 use crate::result::Result;
 
@@ -34,12 +35,13 @@ impl Vhci {
 		let desired_speed_class = device.speed.port_class();
 
 		if let Some(port) = self.get_available_port(desired_speed_class) {
-			std::fs::write(
+			Ok(std::fs::write(
 				self.attach_path(),
 				format!("{} {} {} {}", port, fd, device.device_id(), device.speed as u32),
-			)?;
+			)?)
+		} else {
+			Err(PlatformError::NoAvailableVhciPort.into())
 		}
-		Ok(())
 	}
 
 	fn get_available_port(&self, desired_speed_class: USBPortSpeedClass) -> Option<u16> {
