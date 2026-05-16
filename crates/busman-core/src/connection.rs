@@ -3,7 +3,10 @@ use crate::{
 	protocol::{Decode, Encode, Frame},
 	result::{DecodeResult, EncodeResult, Result},
 };
-use std::net::{SocketAddrV4, TcpListener, TcpStream};
+use std::{
+	net::{SocketAddrV4, TcpListener, TcpStream},
+	os::fd::AsRawFd,
+};
 
 pub struct Connection {
 	socket: TcpStream,
@@ -53,5 +56,9 @@ impl Connection {
 
 	pub fn into_socket(self) -> TcpStream {
 		self.socket
+	}
+
+	pub fn socket_fd(&self) -> i32 {
+		self.socket.as_raw_fd()
 	}
 }

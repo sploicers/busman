@@ -14,7 +14,7 @@ use crate::{
 	connection::Connection,
 	platform::linux::{
 		kernel::{KernelModule, load_kernel_module},
-		sysfs::{read_sysfs_val_dec, read_sysfs_val_hex, write_sysfs_val_string},
+		sysfs::{read_sysfs_val_dec, read_sysfs_val_hex, read_sysfs_val_string, write_sysfs_val_string},
 	},
 	protocol::{USBDevice, USBDeviceField, USBDeviceInterface, USBDeviceInterfaceField},
 	result::Result,
@@ -239,6 +239,10 @@ impl DeviceDir {
 	{
 		Ok(read_sysfs_val_dec(&self.path.join(field.as_str()))?)
 	}
+
+	pub fn read_attr_string(&self, field: USBDeviceField) -> Result<String> {
+		Ok(read_sysfs_val_string(&self.path.join(field.as_str()))?)
+	}
 }
 
 impl InterfaceDir {
@@ -310,7 +314,7 @@ fn build_device(dir: &DeviceDir) -> Result<USBDevice> {
 		path: "".into(),
 		bus_num: dir.read_attr_dec(USBDeviceField::BusNum)?,
 		device_num: dir.read_attr_dec(USBDeviceField::DevNum)?,
-		speed: dir.read_attr_dec(USBDeviceField::Speed)?,
+		speed: dir.read_attr_string(USBDeviceField::Speed)?.try_into()?,
 		vendor_id: dir.read_attr_hex(USBDeviceField::VendorId)?,
 		product_id: dir.read_attr_hex(USBDeviceField::ProductId)?,
 		revision_num: dir.read_attr_dec(USBDeviceField::RevisionNum)?,

@@ -2,9 +2,10 @@ use std::fmt::Display;
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::error::{DecodeError, EncodeError};
-use crate::result::{DecodeResult, EncodeResult};
+use crate::error::{BusmanError, DecodeError, EncodeError, ParseError};
+use crate::result::{DecodeResult, EncodeResult, Result};
 
 pub trait Encode {
 	fn encode(&self, writer: &mut impl Write) -> EncodeResult<()>;
@@ -37,7 +38,7 @@ pub struct USBDevice {
 	pub bus_id: String,
 	pub bus_num: u32,
 	pub device_num: u32,
-	pub speed: u32,
+	pub speed: DeviceSpeed,
 	pub vendor_id: u16,
 	pub product_id: u16,
 	pub revision_num: u16, // called "bcdDevice" in the protocol spec
@@ -52,6 +53,34 @@ pub struct USBDevice {
 impl USBDevice {
 	pub fn device_id(&self) -> u32 {
 		(self.bus_num << 16) | self.device_num
+	}
+}
+
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, IntoPrimitive, TryFromPrimitive)]
+#[repr(u32)]
+pub enum DeviceSpeed {
+	#[default]
+	Unknown = 0,
+	Low = 1,
+	Full = 2,
+	High = 3,
+	Wireless = 4,
+	Super = 5,
+	SuperPlus = 6,
+}
+
+impl TryFrom<String> for DeviceSpeed {
+	type Error = BusmanError;
+
+	fn try_from(value: String) -> Result<Self> {
+		match value.trim() {
+			"1.5" => Ok(Self::Low),
+			"12" => Ok(Self::Full),
+			"480" => Ok(Self::High),
+			"5000" => Ok(Self::Super),
+			"10000" | "20000" => Ok(Self::SuperPlus),
+			_ => Err(ParseError::InvalidSpeedClass.into()),
+		}
 	}
 }
 
@@ -287,7 +316,7 @@ impl Encode for USBDevice {
 		writer.write_all(&fixed_length_buffer_from_str::<32>(&self.bus_id)?)?;
 		writer.write_u32::<BigEndian>(self.bus_num)?;
 		writer.write_u32::<BigEndian>(self.device_num)?;
-		writer.write_u32::<BigEndian>(self.speed)?;
+		writer.write_u32::<BigEndian>(self.speed as u32)?;
 		writer.write_u16::<BigEndian>(self.vendor_id)?;
 		writer.write_u16::<BigEndian>(self.product_id)?;
 		writer.write_u16::<BigEndian>(self.revision_num)?;
@@ -311,7 +340,7 @@ impl Decode for USBDevice {
 		let bus_id = string_from_fixed_length_buffer::<32>(reader)?;
 		let bus_num = reader.read_u32::<BigEndian>()?;
 		let device_num = reader.read_u32::<BigEndian>()?;
-		let speed = reader.read_u32::<BigEndian>()?;
+		let speed = DeviceSpeed::try_from_primitive(reader.read_u32::<BigEndian>()?)?;
 		let vendor_id = reader.read_u16::<BigEndian>()?;
 		let product_id = reader.read_u16::<BigEndian>()?;
 		let revision_num = reader.read_u16::<BigEndian>()?;

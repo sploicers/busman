@@ -6,6 +6,7 @@ use crate::platform::linux::kernel::KernelModule;
 pub enum PlatformError {
 	CommandFailed(ExitStatus),
 	ModuleNotFound(KernelModule),
+	NoAvailableVhciPort,
 }
 
 impl core::error::Error for PlatformError {}

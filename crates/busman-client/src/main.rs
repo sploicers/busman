@@ -1,6 +1,6 @@
 use std::net::{Ipv4Addr, SocketAddrV4};
 
-use busman_core::{engine::Engine, result::Result};
+use busman_core::{engine::ClientEngine, result::Result};
 
 fn main() -> Result<()> {
 	env_logger::init();
@@ -8,7 +8,7 @@ fn main() -> Result<()> {
 	let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
 	log::info!("Initializing...");
 
-	let mut engine = Engine::new()?;
+	let mut engine = ClientEngine::new()?;
 	engine.client_connect(addr)?;
 
 	let devices = engine.query_devices()?;

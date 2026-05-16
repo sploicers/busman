@@ -1,4 +1,6 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, fmt::Display, num::ParseIntError};
+
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 
 use crate::platform::PlatformError;
 
@@ -22,6 +24,12 @@ impl From<std::io::Error> for BusmanError {
 impl From<std::str::Utf8Error> for BusmanError {
 	fn from(value: std::str::Utf8Error) -> Self {
 		Self::Decode(DecodeError::InvalidUtf8(value))
+	}
+}
+
+impl From<ParseIntError> for BusmanError {
+	fn from(_: ParseIntError) -> Self {
+		Self::Parse(ParseError::InvalidSpeedClass)
 	}
 }
 
@@ -91,6 +99,7 @@ pub enum DecodeError {
 	UnsupportedOpcode(u16),
 	Io(std::io::Error),
 	InvalidUtf8(std::str::Utf8Error),
+	InvalidPrimitive { typename: &'static str, value: u32 },
 }
 
 impl Error for DecodeError {}
@@ -104,6 +113,18 @@ impl From<std::io::Error> for DecodeError {
 impl From<std::str::Utf8Error> for DecodeError {
 	fn from(value: std::str::Utf8Error) -> Self {
 		Self::InvalidUtf8(value)
+	}
+}
+
+impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for DecodeError
+where
+	T::Primitive: Into<u32>,
+{
+	fn from(value: TryFromPrimitiveError<T>) -> Self {
+		DecodeError::InvalidPrimitive {
+			typename: std::any::type_name::<T>(),
+			value: value.number.into(),
+		}
 	}
 }
 
@@ -122,6 +143,7 @@ pub enum ParseError {
 	NotAnInterface,
 	NotADevice,
 	NonUtf8Path,
+	InvalidSpeedClass,
 	Io(std::io::Error),
 	InvalidHex(std::num::ParseIntError),
 }
